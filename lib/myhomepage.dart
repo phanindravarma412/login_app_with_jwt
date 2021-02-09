@@ -24,7 +24,7 @@ class _MyHomePageState extends State<MyHomePage> {
     final String accesstoken = prefs.getString('accesstoken');
     final String refreshtoken = prefs.getString('refreshtoken');
     final String userid = prefs.getString('userid');
-    print('$accesstoken, $refreshtoken, $userid');
+    // print('$accesstoken, $refreshtoken, $userid');
 
     if (accesstoken != null && refreshtoken != null && userid != null) {
       setState(() {
@@ -38,24 +38,70 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void loginUser(Map<String, dynamic> data) async {
-    Map<String, dynamic> tokens = await ApiService().getTokens(data);
-    print('inside login');
-    print(tokens["access_token"]);
-
-    if (tokens["access_token"] != null && tokens["refresh_token"] != null) {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      prefs.setString('accesstoken', tokens["access_token"]);
-      prefs.setString('refreshtoken', tokens["refresh_token"]);
-      prefs.setString('userid', data["user_id"]);
-      setState(() {
-        accessToken = tokens["access_token"];
-        refreshToken = tokens["refresh_token"];
-        userId = data["user_id"];
-      });
-      print('caling second function');
-      ApiService().getUserDetails(accessToken, userId);
+    print(accessToken.isNotEmpty && refreshToken.isNotEmpty && userId.isNotEmpty);
+    if (accessToken.isNotEmpty && refreshToken.isNotEmpty && userId.isNotEmpty) {
+      print('i am inside true function');
+      Map<String, dynamic> userDetails =
+          await ApiService().getUserDetails(accessToken, userId);
+      print('USERDETAILS : $userDetails');
+      if (userDetails["Message"] == null) {
+        print('we got the data');
+        print(userDetails);
+      } else {
+        print('access token expiresd');
+        Map<String, dynamic> newAccessToken =
+            await ApiService().generateAccessToken(refreshToken);
+        print('NEW ACCESS TOKEN : $newAccessToken');
+        if (newAccessToken["message"] != null) {
+          print('refresh token was expired');
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          prefs.setString('accesstoken', null);
+          prefs.setString('refreshtoken', null);
+          prefs.setString('userid', null);
+          setState(() {
+            userId = "";
+            accessToken = "";
+            refreshToken = "";
+            isLoggedIn = false;
+          });
+        } else {
+          print('new access token was generated');
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          prefs.setString('accesstoken', newAccessToken["access_token"]);
+          setState(() {
+            accessToken = newAccessToken["access_token"];
+          });
+          Map<String, dynamic> newDetails =
+              await ApiService().getUserDetails(accessToken, userId);
+          print('DEATILS OF USER : $newDetails');
+        }
+      }
     } else {
-      print('User not exists, please create a account');
+      print('inside false function');
+      Map<String, dynamic> tokens = await ApiService().getTokens(data);
+
+      print('TOKENS : $tokens');
+
+      if (tokens["access_token"] != null && tokens["refresh_token"] != null) {
+        print('tokens are genrated');
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        prefs.setString('accesstoken', tokens["access_token"]);
+        prefs.setString('refreshtoken', tokens["refresh_token"]);
+        prefs.setString('userid', data["user_id"]);
+        setState(() {
+          accessToken = tokens["access_token"];
+          refreshToken = tokens["refresh_token"];
+          userId = data["user_id"];
+          isLoggedIn = true;
+        });
+
+        print('TOKENS are stored in local Storage');
+
+        Map<String, dynamic> results = await ApiService().getUserDetails(accessToken, userId);
+        print('RESULTS : $results');
+      } else {
+        print('User not exists, please create a account');
+      }
     }
   }
 
@@ -63,9 +109,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     autoLogin();
-    // print('$userId, $accessToken, $refreshToken');
-    // print(isLoggedIn);
-    // print(userId.isEmpty);
   }
 
   @override
@@ -80,14 +123,16 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  TextFormField(
-                    controller: mobileNumberController,
-                    decoration: InputDecoration(
-                      hintText: 'Enter Mobile Number',
-                      labelText: 'Mobile Number',
-                      prefixIcon: Icon(Icons.phone),
-                    ),
-                  ),
+                  isLoggedIn
+                      ? Text('You already logged as $userId')
+                      : TextFormField(
+                          controller: mobileNumberController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter Mobile Number',
+                            labelText: 'Mobile Number',
+                            prefixIcon: Icon(Icons.phone),
+                          ),
+                        ),
                   TextFormField(
                     obscureText: hideText,
                     controller: pinController,
@@ -112,7 +157,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     child: Text('Login'),
                     onPressed: () {
                       setState(() {
-                        mobileNumber = mobileNumberController.text;
+                        mobileNumber =
+                            isLoggedIn ? userId : mobileNumberController.text;
                         pin = pinController.text;
                       });
                       if (mobileNumber.length < 10 && pin.length < 4) {
